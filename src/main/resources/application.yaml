@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: k-place
+
+  # dev 프로파일에서만 docker-compose.yml 을 자동 기동한다 (application-dev.yaml 참조)
+  docker:
+    compose:
+      enabled: false
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:k_place}?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:k_place}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+logging:
+  level:
+    com.k_place: DEBUG

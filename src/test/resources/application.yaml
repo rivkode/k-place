@@ -1,0 +1,26 @@
+# 테스트 전용 설정. 로컬/CI 어디서든 외부 인프라 없이 돌도록 H2 인메모리를 쓴다.
+# H2 는 MySQL 호환 모드로 띄우지만 방언이 완전히 같지는 않다.
+# MySQL 고유 문법이나 제약을 검증해야 하는 테스트는 dev 프로파일의 실제 MySQL 로 확인한다.
+spring:
+  datasource:
+    url: jdbc:h2:mem:k_place;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+logging:
+  level:
+    com.k_place: DEBUG

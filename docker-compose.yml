@@ -1,0 +1,92 @@
+# k-place 로컬 인프라.
+#
+# 기본 (mysql + redis 만):
+#   docker compose up -d
+#   → ./gradlew bootRun 은 dev 프로파일로 이 파일을 읽어 두 컨테이너를 자동 기동한다.
+#
+# 애플리케이션까지 컨테이너로 (server 포함):
+#   ./gradlew bootJar && docker compose --profile app up -d --build
+#
+# server 를 compose profile 로 분리한 이유:
+# 프로파일이 없으면 spring-boot-docker-compose 가 bootRun 시 server 컨테이너까지 띄워
+# 애플리케이션이 자기 자신을 중복 실행하게 된다.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: k-place-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: k_place
+      MYSQL_USER: k_place
+      MYSQL_PASSWORD: k_place
+      TZ: UTC
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - k-place-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: k-place-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - k-place-net
+
+  # 애플리케이션. 호스트에서 ./gradlew bootJar 로 만든 산출물을 COPY 한다.
+  # JVM 은 -XX:MaxRAMPercentage 로 컨테이너 메모리 한도를 따른다 (Dockerfile 참조).
+  server:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: k-place-server:local
+    container_name: k-place-server
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: k_place
+      DB_USERNAME: k_place
+      DB_PASSWORD: k_place
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+      start_period: 30s
+    networks:
+      - k-place-net
+
+volumes:
+  mysql_data:
+  redis_data:
+
+networks:
+  k-place-net:
+    driver: bridge

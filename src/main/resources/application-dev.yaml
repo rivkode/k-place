@@ -1,0 +1,20 @@
+# 로컬 개발(dev) 프로파일.
+# docker-compose.yml 의 MySQL/Redis 컨테이너를 자동 기동하고, 접속 정보는
+# spring-boot-docker-compose 가 컨테이너에서 읽어 주입하므로 여기에 적지 않는다.
+spring:
+  docker:
+    compose:
+      enabled: true
+      file: docker-compose.yml
+      lifecycle-management: start_and_stop   # 앱 종료 시 컨테이너도 내린다
+      skip:
+        in-tests: true
+
+  jpa:
+    hibernate:
+      ddl-auto: update      # 스키마 마이그레이션 도입 전까지 임시. 운영은 validate 유지
+    show-sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
