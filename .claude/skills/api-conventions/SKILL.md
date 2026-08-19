@@ -144,19 +144,49 @@ GET /v1/places?page=0&size=20&sort=createdAt,desc
 
 `@RestControllerAdvice` 에서 단일 포맷으로 반환한다.
 
+구현은 이미 있다 — 새로 만들지 말고 아래를 쓴다.
+
+| 클래스 | 위치 |
+|---|---|
+| `ErrorCode` (enum) | `common/exception/ErrorCode.java` |
+| `BusinessException` | `common/exception/BusinessException.java` |
+| `ErrorResponse` | `common/presentation/ErrorResponse.java` |
+| `GlobalExceptionHandler` | `common/presentation/GlobalExceptionHandler.java` |
+
 ```json
 {
-  "code": "PLACE_NOT_FOUND",
-  "message": "요청한 장소를 찾을 수 없습니다.",
-  "errors": [
-    { "field": "name", "reason": "공백일 수 없습니다" }
+  "code": "VALIDATION_FAILED",
+  "message": "입력값 검증에 실패했습니다.",
+  "fieldErrors": [
+    { "field": "name", "message": "공백일 수 없습니다" }
   ]
 }
 ```
 
-- `code`: 기계가 분기하는 값. `common` 의 `ErrorCode` enum 으로 관리하고 문자열을 흩뿌리지 않는다.
+- `code`: 기계가 분기하는 값. **`ErrorCode` enum 이름이 그대로 나간다.** 문자열을 흩뿌리지 않는다.
 - `message`: 사람이 읽는 값. **여기에 스택트레이스·SQL·내부 클래스명을 넣지 않는다.**
-- `errors`: 검증 실패일 때만. 필드 단위 사유.
+- `fieldErrors`: 검증 실패일 때만 채워지고, 그 외에는 **직렬화에서 생략**된다(`NON_NULL`).
+
+**새 에러를 추가하는 방법** — `GlobalExceptionHandler` 를 고치지 않는다.
+
+1. `ErrorCode` 에 상수를 추가한다 (HTTP 상태 + 사용자 메시지를 여기서 결정).
+2. `BusinessException` 을 상속한 도메인 예외를 만들고 그 ErrorCode 를 넘긴다.
+
+```java
+// common/exception/ErrorCode.java 에 추가
+PLACE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 장소를 찾을 수 없습니다."),
+
+// place/domain/PlaceNotFoundException.java
+public class PlaceNotFoundException extends BusinessException {
+    public PlaceNotFoundException(PlaceId id) {
+        super(ErrorCode.PLACE_NOT_FOUND, "place not found: " + id.value());
+    }
+}
+```
+
+생성자의 두 번째 인자는 **로그용 상세**다. 클라이언트에는 ErrorCode 의 메시지만 나간다.
+`IllegalArgumentException` → 400, `IllegalStateException` → 409 로도 매핑되지만,
+의미가 분명한 도메인 예외를 쓰는 편이 낫다.
 
 ---
 

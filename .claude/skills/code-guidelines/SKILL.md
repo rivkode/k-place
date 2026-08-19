@@ -140,6 +140,8 @@ infrastructure (XxxJpaEntity, Repository 구현, Mapper, Redis/외부 연동)
 
 ### Aggregate / Entity
 - **JPA/Spring/Jackson 애너테이션 절대 금지** (`@Entity`, `@Component`, `@JsonProperty`)
+- **Lombok 금지** — `@Getter`/`@Setter`/`@Data` 는 불변식을 지킬 지점을 없앤다.
+  접근자는 필요한 것만 손으로 쓴다. Lombok 은 infrastructure/presentation 에서만 쓴다.
 - **public setter 금지** — 상태 변경은 의미 있는 메서드로 (`close()`, `approve()`)
 - 생성은 **static 팩토리 메서드** (`Review.write(...)`, `Place.register(...)`)
 - 불변식은 생성자/메서드에서 **즉시 검증**
@@ -235,7 +237,9 @@ JPA 가 대신 정하게 만든다. 필요한 조인은 조회 전용 쿼리에�
 - **Request/Response DTO 와 Application Command 를 분리**한다.
 - 입력 검증(`@Valid`, `@NotBlank`)은 **presentation DTO 에만**.
 - 도메인 객체를 Response 로 **직접 반환 금지**.
-- 예외는 `@RestControllerAdvice` 에서 공통 처리 (포맷은 `api-conventions` 참조).
+- 예외는 `common/presentation/GlobalExceptionHandler` 가 공통 처리한다. **핸들러를 새로 만들지 않는다.**
+  도메인 예외는 `common/exception/BusinessException` 을 상속하고 `ErrorCode` 를 넘기면 자동 매핑된다
+  (`api-conventions` 5.3 절).
 
 ---
 
