@@ -501,40 +501,44 @@ public class ReviewController {
 }
 ```
 
-### 4.3 예외 처리
+### 4.3 예외 처리 — 도메인 예외만 추가한다
+
+`GlobalExceptionHandler` 는 `common/presentation` 에 이미 있다. **핸들러를 새로 만들지 않는다.**
+`BusinessException` 을 상속하면 `ErrorCode` 에 정의된 HTTP 상태로 자동 매핑된다.
 
 ```java
-package com.k_place.common.presentation;
+// common/exception/ErrorCode.java — 상수 추가 (상태 + 사용자 메시지를 여기서 결정)
+REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리뷰를 찾을 수 없습니다."),
+DUPLICATE_REVIEW(HttpStatus.CONFLICT, "이미 이 장소에 리뷰를 작성했습니다."),
+PLACE_NOT_REVIEWABLE(HttpStatus.UNPROCESSABLE_ENTITY, "리뷰를 작성할 수 없는 장소입니다."),
+```
 
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+```java
+package com.k_place.review.domain;
 
-@RestControllerAdvice
-public class GlobalExceptionHandler {
+import com.k_place.common.exception.BusinessException;
+import com.k_place.common.exception.ErrorCode;
 
-    @ExceptionHandler(ReviewNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(ReviewNotFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.of(ErrorCode.REVIEW_NOT_FOUND));
-    }
+/** 두 번째 인자는 로그용 상세다. 클라이언트에는 ErrorCode 의 메시지만 나간다. */
+public class DuplicateReviewException extends BusinessException {
 
-    @ExceptionHandler(DuplicateReviewException.class)
-    public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateReviewException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of(ErrorCode.DUPLICATE_REVIEW));
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException e) {
-        List<FieldError> errors = e.getBindingResult().getFieldErrors().stream()
-                .map(fe -> new FieldError(fe.getField(), fe.getDefaultMessage()))
-                .toList();
-        return ResponseEntity.badRequest()
-                .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST, errors));
+    public DuplicateReviewException(PlaceId placeId, MemberId authorId) {
+        super(ErrorCode.DUPLICATE_REVIEW,
+                "duplicate review: placeId=%s, authorId=%s".formatted(placeId.value(), authorId.value()));
     }
 }
 ```
+
+응답:
+
+```http
+POST /v1/places/PLC-1024/reviews  →  409 Conflict
+
+{ "code": "DUPLICATE_REVIEW", "message": "이미 이 장소에 리뷰를 작성했습니다." }
+```
+
+**핸들러를 직접 고쳐야 하는 경우**는 프레임워크 예외를 새로 매핑할 때뿐이다
+(예: `OptimisticLockingFailureException` → 409). 도메인 예외 때문에 고칠 일은 없다.
 
 ### 4.4 이벤트 리스너 (커밋 이후 후처리)
 

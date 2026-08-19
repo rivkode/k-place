@@ -93,21 +93,29 @@ Closes #12
 
 ## 3. 브랜치
 
-### 3.1 브랜치 구성 — `main` + `dev` 둘만 유지한다
+### 3.1 상시 브랜치는 `main` + `dev` 둘뿐이다
 
 ```
-main   릴리스 브랜치. 배포 가능한 상태만 올라간다. 직접 커밋하지 않는다.
-dev    개발 브랜치. 모든 작업이 여기서 이뤄진다.
+main   릴리스 브랜치. 배포 가능한 상태만 올라간다.
+dev    개발 브랜치. 기본 통합 지점.
 ```
 
-- **브랜치를 더 늘리지 않는다.** 기능마다 브랜치를 파지 않고 `dev` 에서 직접 작업한다.
-- `dev` → `main` PR 로만 `main` 이 갱신된다. 이 PR 의 base 는 `main`.
-- 작업 시작 전 `git checkout dev && git pull origin dev`.
+**두 브랜치 모두 직접 커밋하지 않는다. 반영은 오직 PR 로만 한다.**
 
-### 3.2 네이밍 (브랜치를 늘려야 할 때만)
+- 작업은 **항상 새 작업 브랜치**에서 한다: `dev` 에서 분기 → 커밋 → 푸시 → **`dev` 로 PR**.
+- 작업 브랜치는 머지 후 **삭제**한다. 그래야 상시 브랜치가 `main` + `dev` 둘로 유지된다.
+- `main` 은 `dev` → `main` 릴리스 PR 로만 갱신된다.
+- 작업 시작 전: `git checkout dev && git pull origin dev && git checkout -b <type>/<...>`
 
-`dev` 에서 감당하기 어려운 큰 작업이나 병행 작업이 생기면 그때만 브랜치를 만들고,
-머지 후 삭제해 다시 `main` + `dev` 상태로 되돌린다. base 는 `dev` 다.
+```
+dev ──┬─→ feat/xxx ──PR──→ dev ──PR──→ main
+      └─→ fix/yyy  ──PR──→ dev
+```
+
+**`dev` 에 직접 push 하지 않는다.** 급한 수정이라도 브랜치를 파고 PR 을 연다.
+(리뷰 없이 머지하더라도 PR 은 변경 이력과 맥락을 남기는 문서다.)
+
+### 3.2 작업 브랜치 네이밍
 
 ```
 <type>/<scope>-<short-description>
@@ -119,6 +127,7 @@ dev    개발 브랜치. 모든 작업이 여기서 이뤄진다.
 - `chore/bump-spring-boot-3.5.14`
 
 **규칙**: 소문자 + kebab-case, 80자 이내. 이슈 번호를 넣어도 된다 (`feat/12-review-write-api`).
+`type` 은 2.3 절의 커밋 타입과 같은 값을 쓴다.
 
 ---
 
@@ -270,7 +279,8 @@ pr1 이 머지되면 pr2 의 base 를 `dev` 로 변경한다.
 - 예외 — **Rebase and Merge**: 개별 커밋이 모두 의미 있고 독립적으로 빌드 가능할 때.
 
 ### 머지 전 최종 확인
-- [ ] base 브랜치가 의도한 것인가? (`dev` → `main` 릴리스 PR 인지, `main` 을 실수로 고른 건 아닌지)
+- [ ] base 브랜치가 `dev` 인가? (릴리스 PR 이 아닌데 `main` 을 고르지 않았는가?)
+- [ ] 머지 후 작업 브랜치를 삭제했는가?
 - [ ] 리뷰 Approve 를 받았는가?
 - [ ] 빌드/CI 가 녹색인가?
 - [ ] 리뷰 중 논의된 변경이 반영되었는가?
@@ -307,12 +317,12 @@ pr1 이 머지되면 pr2 의 base 를 `dev` 로 변경한다.
 2. 문제를 이해하고 **재현 조건**을 정리한다. 불명확하면 이슈에 코멘트로 질문한다.
 3. 관련 코드를 검색해 **영향 범위**를 계층별로 파악한다
    (`code-guidelines` 1부 Step 3).
-4. `dev` 에서 작업한다 (브랜치 정책은 3.1 절). 최신 상태인지 `git pull origin dev` 로 확인한다.
+4. `dev` 를 최신화하고 작업 브랜치를 판다: `git checkout dev && git pull origin dev && git checkout -b fix/<번호>-<short-description>`.
 5. **먼저 실패하는 테스트**를 작성해 버그를 고정한다 (`testing-junit`).
 6. 수정을 구현한다. 규칙은 `code-guidelines` 2부, API 변경이면 `api-conventions`.
 7. `./gradlew build` 로 컴파일 + 전체 테스트를 확인한다.
 8. Conventional Commits 형식으로 커밋한다. 본문에 **원인과 해결 방식**을 적고 `Closes #<번호>`.
-9. 푸시 후 `gh pr create` 로 PR 을 만든다. 본문은 5절 템플릿.
+9. 작업 브랜치를 푸시하고 `gh pr create --base dev` 로 PR 을 만든다. 본문은 5절 템플릿.
 10. 셀프 리뷰(6절)를 마친 뒤 리뷰를 요청한다.
 
 **주의**: 커밋과 푸시, PR 생성은 되돌리기 어렵거나 외부에 드러나는 행위다.
@@ -332,6 +342,7 @@ pr1 이 머지되면 pr2 의 base 를 `dev` 로 변경한다.
 | 빌드 실패한 채로 리뷰 요청 | 녹색으로 만든 뒤 요청 |
 | 리뷰 코멘트 무응답 | 모든 코멘트에 응답 |
 | 제목이 `update`, `수정` | `<type>(<scope>): <subject>` |
+| `dev` 에 직접 push | 작업 브랜치 → PR → `dev` |
 
 ---
 

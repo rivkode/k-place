@@ -61,7 +61,8 @@ docker compose up -d               # mysql + redis 만 수동으로 띄울 때
   `bootRun` 이 자기 자신을 컨테이너로 중복 실행하지 않는다.
 - 운영 접속 정보는 환경변수로 주입한다(`DB_HOST`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`).
   자격 증명을 소스에 하드코딩하지 않는다.
-- **브랜치는 `main` 과 `dev` 둘만 유지한다.** 작업은 `dev` 에서, `main` 은 `dev` → `main` PR 로만 갱신.
+- **상시 브랜치는 `main` 과 `dev` 둘뿐이고, 둘 다 직접 push 하지 않는다.**
+  작업은 항상 `dev` 에서 분기한 작업 브랜치에서 하고, `dev` 반영은 **PR 로만** 한다 (머지 후 브랜치 삭제).
 
 ### 규칙이 적힌 곳 (필요할 때 열어볼 것)
 
