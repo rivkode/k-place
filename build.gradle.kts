@@ -35,13 +35,27 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testCompileOnly("org.projectlombok:lombok")
 	testAnnotationProcessor("org.projectlombok:lombok")
-	// H2 는 테스트 전용이다. 운영 클래스패스에 올리면 실수로 H2 로 뜰 수 있으므로 testRuntimeOnly 유지.
-	testRuntimeOnly("com.h2database:h2")
+
+	// 테스트도 운영과 같은 MySQL/Redis 위에서 돈다. H2 는 쓰지 않는다 —
+	// 락·격리 수준·제약 동작이 달라 동시성 테스트가 거짓 통과하기 때문이다.
+	testImplementation("org.springframework.boot:spring-boot-testcontainers")
+	testImplementation("org.testcontainers:junit-jupiter")
+	testImplementation("org.testcontainers:mysql")
+
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+
+	// Testcontainers 는 정리용 Ryuk 컨테이너에 도커 소켓을 마운트한다. Colima / Rancher Desktop 처럼
+	// 소켓이 VM 안에 있는 런타임에서는 호스트 경로(~/.colima/.../docker.sock)를 그대로 마운트하려다
+	// 실패하므로, VM 기준 경로로 바로잡는다. Docker Desktop 도 같은 경로라 무해하다.
+	// 이미 설정한 값이 있으면 존중한다.
+	environment(
+		"TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE",
+		System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE") ?: "/var/run/docker.sock",
+	)
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {

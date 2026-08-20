@@ -1,26 +1,22 @@
-# 테스트 전용 설정. 로컬/CI 어디서든 외부 인프라 없이 돌도록 H2 인메모리를 쓴다.
-# H2 는 MySQL 호환 모드로 띄우지만 방언이 완전히 같지는 않다.
-# MySQL 고유 문법이나 제약을 검증해야 하는 테스트는 dev 프로파일의 실제 MySQL 로 확인한다.
+# 테스트 전용 설정.
+#
+# datasource / redis 접속 정보는 여기에 없다. Testcontainers 가 띄운 컨테이너에서
+# @ServiceConnection 이 읽어 주입한다 (support/container/TestcontainersConfiguration).
+#
+# H2 를 쓰지 않는다 — 락·격리 수준·제약 동작이 MySQL 과 달라 동시성 테스트가
+# 거짓 통과하기 때문이다. 테스트도 운영과 같은 엔진 위에서 돈다.
 spring:
-  datasource:
-    url: jdbc:h2:mem:k_place;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create-drop   # 스키마 마이그레이션 도입 전까지. 컨테이너는 매 실행 새로 뜬다
     open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
-
-  data:
-    redis:
-      host: localhost
-      port: 6379
+        format_sql: true
 
 logging:
   level:
     com.k_place: DEBUG
+    # 컨테이너 기동 로그가 테스트 출력을 덮지 않도록 낮춘다
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN
