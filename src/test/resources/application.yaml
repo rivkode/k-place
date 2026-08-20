@@ -1,25 +1,39 @@
-# 테스트 전용 설정. 로컬/CI 어디서든 외부 인프라 없이 돌도록 H2 인메모리를 쓴다.
-# H2 는 MySQL 호환 모드로 띄우지만 방언이 완전히 같지는 않다.
-# MySQL 고유 문법이나 제약을 검증해야 하는 테스트는 dev 프로파일의 실제 MySQL 로 확인한다.
+# 테스트 전용 설정.
+#
+# 개발용과 같은 컨테이너(docker-compose.yml)에 붙되, 공간만 나눈다.
+#   MySQL: k_place_test 스키마   (개발은 k_place)
+#   Redis: 1번 DB                (개발은 0번)
+# 매 테스트 뒤 이 두 공간만 비운다 (support/cleanup/InfrastructureCleaner).
+#
+# **테스트 전에 `docker compose up -d` 가 필요하다.** 컨테이너를 직접 띄우지 않는 대신
+# 실행마다 인프라 부팅을 기다리지 않는다.
+#
+# H2 를 쓰지 않는다 — 락·격리 수준·제약 동작이 MySQL 과 달라 동시성 테스트가
+# 거짓 통과하기 때문이다. 테스트도 운영과 같은 엔진 위에서 돈다.
 spring:
   datasource:
-    url: jdbc:h2:mem:k_place;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/k_place_test?serverTimezone=UTC&characterEncoding=UTF-8
+    username: ${DB_USERNAME:k_place}
+    password: ${DB_PASSWORD:k_place}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 동시성 테스트는 동시 요청 수만큼 커넥션을 쥔다. 작으면 락이 아니라
+      # 풀 고갈로 실패해 원인을 오해하게 된다.
+      maximum-pool-size: 32
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create-drop   # 스키마 마이그레이션 도입 전까지
     open-in-view: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 1
 
 logging:
   level:

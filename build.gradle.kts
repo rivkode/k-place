@@ -35,8 +35,10 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testCompileOnly("org.projectlombok:lombok")
 	testAnnotationProcessor("org.projectlombok:lombok")
-	// H2 는 테스트 전용이다. 운영 클래스패스에 올리면 실수로 H2 로 뜰 수 있으므로 testRuntimeOnly 유지.
-	testRuntimeOnly("com.h2database:h2")
+
+	// 테스트도 운영과 같은 MySQL/Redis 위에서 돈다. H2 는 쓰지 않는다 —
+	// 락·격리 수준·제약 동작이 달라 동시성 테스트가 거짓 통과하기 때문이다.
+	// 컨테이너는 docker-compose.yml 의 것을 그대로 쓰므로 별도 테스트 의존성이 없다.
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

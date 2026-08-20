@@ -1,15 +1,20 @@
-# k-place 로컬 인프라.
+# k-place 로컬 개발 인프라.
 #
-# 기본 (mysql + redis 만):
-#   docker compose up -d
-#   → ./gradlew bootRun 은 dev 프로파일로 이 파일을 읽어 두 컨테이너를 자동 기동한다.
+#   docker compose up -d          mysql + redis 만 기동
+#   ./gradlew bootRun             dev 프로파일이 이 파일을 읽어 자동 기동
+#   ./gradlew bootJar && docker compose --profile app up -d --build      앱까지 컨테이너로
 #
-# 애플리케이션까지 컨테이너로 (server 포함):
-#   ./gradlew bootJar && docker compose --profile app up -d --build
+# server 를 compose 프로파일 뒤에 둔 이유: 프로파일이 없으면 spring-boot-docker-compose 가
+# bootRun 시 server 컨테이너까지 띄워 애플리케이션이 자기 자신을 중복 실행하게 된다.
 #
-# server 를 compose profile 로 분리한 이유:
-# 프로파일이 없으면 spring-boot-docker-compose 가 bootRun 시 server 컨테이너까지 띄워
-# 애플리케이션이 자기 자신을 중복 실행하게 된다.
+# **테스트도 이 컨테이너를 쓴다.** 실행할 때마다 컨테이너를 새로 띄우지 않고
+# 여기 뜬 MySQL/Redis 에 붙으므로 `./gradlew test` 전에 `docker compose up -d` 가 필요하다.
+# 그 대신 인프라 부팅 시간(약 16초)이 사라진다.
+#
+# 개발 데이터와 섞이지 않게 나눠 둔다.
+#   MySQL: 개발 k_place / 테스트 k_place_test  (docker/mysql/init 에서 생성)
+#   Redis: 개발 0번 DB   / 테스트 1번 DB
+# 테스트는 매 케이스 뒤에 자기 쪽만 비운다(support/cleanup/InfrastructureCleaner).
 services:
   mysql:
     image: mysql:8.4
@@ -23,10 +28,16 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # 동시성 테스트와 같은 조건을 개발에서도 맞춘다.
+      # 기본값(151)이면 동시 요청이 많을 때 락이 아니라 커넥션 한도로 먼저 막힌다.
+      - --max-connections=500
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      # 최초 기동 시 한 번만 실행된다. 이미 볼륨이 있으면 무시되므로
+      # 테스트 스키마가 없다면 `docker compose down -v` 후 다시 올린다.
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
       interval: 10s
@@ -51,7 +62,6 @@ services:
       - k-place-net
 
   # 애플리케이션. 호스트에서 ./gradlew bootJar 로 만든 산출물을 COPY 한다.
-  # JVM 은 -XX:MaxRAMPercentage 로 컨테이너 메모리 한도를 따른다 (Dockerfile 참조).
   server:
     profiles: ["app"]
     build:
