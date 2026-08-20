@@ -1,18 +1,14 @@
 package com.k_place;
 
-import com.k_place.support.container.TestcontainersConfiguration;
+import com.k_place.support.IntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 
 /**
  * 전체 컨텍스트가 뜨는지 확인한다.
  *
- * <p>Docker 데몬이 필요하다 — MySQL / Redis 컨테이너 위에서 실제 연결까지 검증한다.
+ * <p>{@code docker compose up -d} 로 MySQL / Redis 가 떠 있어야 한다.
  */
-@SpringBootTest
-@Import(TestcontainersConfiguration.class)
-class KPlaceApplicationTests {
+class KPlaceApplicationTests extends IntegrationTest {
 
 	@Test
 	void contextLoads() {

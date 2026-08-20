@@ -6,8 +6,8 @@
 - **MySQL** (영속 저장소, Spring Data JPA) / **Redis** (캐시·세션·분산 락)
 - **단일 모놀리식 애플리케이션**. 멀티모듈이 아니며 서비스 분리 계획도 없다.
   메시지 브로커, gRPC, 서비스 디스커버리 같은 MSA 요소를 도입하지 않는다.
-- 환경별 저장소: **테스트 = Testcontainers 의 MySQL/Redis** (H2 를 쓰지 않는다),
-  **dev = docker-compose.yml 의 MySQL/Redis 컨테이너**, 운영 = 외부 MySQL/Redis (환경변수 주입)
+- 환경별 저장소: **dev·테스트 모두 docker-compose.yml 의 MySQL/Redis** (H2 를 쓰지 않는다.
+  스키마·Redis DB 번호로 공간만 분리), 운영 = 외부 MySQL/Redis (환경변수 주입)
 
 ```
 src/main/java/com/k_place/
@@ -21,8 +21,9 @@ src/main/java/com/k_place/
 src/main/resources/
   application.yaml              공통 + 운영 기본값 (ddl-auto: validate)
   application-dev.yaml          dev 프로파일 — docker compose 자동 기동
-src/test/resources/application.yaml   테스트 — 접속 정보는 Testcontainers 가 주입
-docker-compose.yml                    mysql / redis / server (server 는 app 프로파일)
+src/test/resources/application.yaml   테스트 — k_place_test 스키마 / Redis 1번 DB
+docker/mysql/init/                    MySQL 최초 기동 시 테스트 스키마 생성
+docker-compose.yml                    개발용 mysql / redis / server (server 는 app 프로파일)
 Dockerfile                            server 이미지 — bootJar 산출물을 COPY
 src/test/java/com/k_place/      main 패키지 구조를 그대로 미러링
 ```
@@ -44,18 +45,19 @@ src/test/java/com/k_place/      main 패키지 구조를 그대로 미러링
 ### 명령어
 
 ```bash
+docker compose up -d               # mysql + redis (테스트·개발 공용, 먼저 띄운다)
 ./gradlew build                    # 컴파일 + 전체 테스트
-./gradlew test                     # 테스트만 (Testcontainers — Docker 필요)
+./gradlew test                     # 테스트만
 ./gradlew test --tests '*Place*'   # 특정 테스트
 ./gradlew bootRun                  # dev 프로파일로 실행 — mysql/redis 컨테이너 자동 기동
-docker compose up -d               # mysql + redis 만 수동으로 띄울 때
 ./gradlew bootJar && docker compose --profile app up -d --build   # 앱까지 컨테이너로
 ```
 
-- **테스트는 운영과 같은 MySQL/Redis 위에서 돈다.** `support/container/TestcontainersConfiguration`
-  이 컨테이너를 띄우고 `@ServiceConnection` 이 접속 정보를 주입한다.
+- **테스트는 개발과 같은 컨테이너를 쓴다.** 공간만 나눈다 — MySQL 은 `k_place_test` 스키마,
+  Redis 는 1번 DB. 격리는 `IntegrationTest` 의 `@AfterEach` 가 그 공간만 비워서 만든다.
+  컨테이너를 매번 띄우지 않으므로 통합 테스트가 16초에서 3초로 줄었다.
   **H2 를 쓰지 않는다** — 락·격리 수준이 달라 동시성 테스트가 거짓 통과하기 때문이다.
-  Spring 컨텍스트가 필요한 테스트만 Docker 를 요구하고, 도메인·Mockito·`@WebMvcTest` 는 없이도 돈다.
+  `IntegrationTest` 를 상속한 테스트만 인프라를 요구하고, 도메인·Mockito·`@WebMvcTest` 는 없이도 돈다.
 - **dev 실행은 Docker 가 떠 있어야 한다.** `spring-boot-docker-compose` 가 `docker-compose.yml` 을 읽어
   컨테이너를 기동하고 접속 정보를 주입하므로, dev 설정에 DB 자격 증명을 적지 않는다.
 - `server` 서비스는 compose 프로파일 `app` 뒤에 있다. 프로파일 없이 `up` 하면 mysql/redis 만 뜨므로
