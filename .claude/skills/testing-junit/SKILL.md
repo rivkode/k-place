@@ -1,6 +1,6 @@
 ---
 name: testing-junit
-description: k-place 에서 JUnit 5 기반 테스트를 작성할 때 사용한다. 계층별 테스트 전략(domain/application/infrastructure/presentation), Mock 사용 기준과 실제 객체 사용 기준, Given-When-Then 구조, 테스트 네이밍, Spring 슬라이스 테스트 선택, MySQL·Redis 가 필요한 테스트 다루는 법, Fixture 관리, 커버리지 기준을 포함한다. "테스트 작성", "단위 테스트", "통합 테스트", "Mockito", "JUnit", "@SpringBootTest" 언급이 있거나 구현 직후 검증 단계에서 반드시 사용한다.
+description: k-place 에서 JUnit 5 기반 테스트를 작성할 때 사용한다. 계층별 테스트 전략(domain/application/infrastructure/presentation), Mock 사용 기준과 실제 객체 사용 기준, Given-When-Then 구조, 테스트 네이밍, Spring 슬라이스 테스트 선택, H2 기반 테스트 환경과 그 한계, ConcurrentRunner 를 쓰는 동시성 테스트, Fixture 관리, 커버리지 기준을 포함한다. "테스트 작성", "단위 테스트", "통합 테스트", "동시성 테스트", "Mockito", "JUnit", "@SpringBootTest" 언급이 있거나 구현 직후 검증 단계에서 반드시 사용한다.
 ---
 
 # Testing with JUnit 5
@@ -260,7 +260,91 @@ Redis **폴백 경로** 테스트는 컨테이너 없이 한다 — 연결 예�
 
 ---
 
-## 8. Fixture 관리
+## 8. 동시성 테스트
+
+재고 차감, 중복 방지, 조회수 증가처럼 **경합이 정답을 바꾸는 로직**은 단일 스레드 테스트로 검증되지 않는다.
+`src/test/java/com/k_place/support/concurrent/` 의 `ConcurrentRunner` 를 쓴다. **직접 executor 를 짜지 않는다.**
+
+```java
+import static com.k_place.support.concurrent.ConcurrentRunner.run;
+
+@Test
+@DisplayName("재고 100개에 200명이 동시에 신청하면 정확히 100명만 성공한다")
+void write_underContention_shouldNotOverIssue() {
+    run(200, i -> issueService.issue(new IssueCommand(memberId(i), couponId)))
+            .assertSuccessCount(100)
+            .assertFailureCount(100);
+
+    assertThat(inventoryRepository.findById(couponId).orElseThrow().remaining()).isZero();
+}
+```
+
+### 8.1 왜 유틸을 쓰나
+
+스레드를 그냥 띄우면 먼저 시작한 스레드가 끝난 뒤 다음이 시작되어 **경합이 재현되지 않는다.**
+`ConcurrentRunner` 는 두 단계 래치로 모든 작업을 출발선에 세운 뒤 동시에 출발시킨다.
+고정 크기 풀 대신 **가상 스레드**를 써서, 풀 크기보다 많은 작업을 넣었을 때 앞선 작업이 출발 신호를
+기다리며 스레드를 점유해 나머지가 시작되지 못하는 함정을 없앴다.
+
+| 메서드 | 용도 |
+|---|---|
+| `run(n, task)` | n개 동시 실행 (타임아웃 10초) |
+| `run(n, timeout, task)` | 타임아웃 지정 |
+| `result.assertAllSucceeded()` | 전부 성공. 실패 시 첫 예외를 cause 로 첨부 |
+| `result.assertSuccessCount(n)` / `assertFailureCount(n)` | 성공·실패 건수 |
+| `result.exceptionsOf(Type.class)` | 예외 타입별 추출 (하위 타입 포함) |
+
+작업이 던진 예외는 다른 작업을 중단시키지 않고 수집된다. 그래서 람다 안에서 try/catch 를 쓸 필요가 없고,
+"200명 중 100명은 예외" 같은 검증을 예외 개수로 표현할 수 있다.
+
+### 8.2 결정적으로 단언한다 ⭐
+
+**동시성 테스트가 한 번 통과했다고 락이 올바르다는 뜻이 아니다.** 경합 버그는 확률적으로 나타난다.
+따라서 단언은 타이밍이 아니라 **결정적인 사후 상태**로 써야 한다.
+
+```java
+// ❌ 실행할 때마다 값이 달라 flaky
+assertThat(result.successCount()).isGreaterThan(50);
+
+// ✅ 락이 올바르면 항상 같은 값
+result.assertSuccessCount(100);
+assertThat(inventory.remaining()).isZero();     // 음수면 초과 발급
+assertThat(couponRepository.count()).isEqualTo(100);
+```
+
+무엇이 깨지는지도 함께 생각한다 — 락이 없으면 `successCount > 100`, 재고가 음수, unique 제약 위반 등.
+그 실패 모드가 단언에 걸리지 않으면 그 테스트는 락을 검증하지 못한다.
+
+### 8.3 어느 계층에서 쓰나
+
+| 대상 | 위치 | 비고 |
+|---|---|---|
+| DB 락 (비관적/낙관적 락, unique 제약) | `@SpringBootTest` | **H2 로 검증하지 않는다** (7.1절). 실제 MySQL 필요 |
+| Redis 원자 연산 (`INCR`, Lua, 분산 락) | infrastructure 테스트 | 실제 Redis 컨테이너 필요 |
+| 도메인 객체의 스레드 안전성 | domain 테스트 | Spring 없이 가능 |
+
+**H2 는 MySQL 의 갭 락·격리 수준을 재현하지 못한다.** DB 락 정합성은 `docker compose up -d` 로
+실제 MySQL 을 띄우고 확인한다.
+
+`@SpringBootTest` 로 동시성 테스트를 할 때는 **커넥션 풀이 동시 요청 수보다 커야 한다.**
+작으면 락이 아니라 풀 고갈로 실패해 원인을 오해하게 된다.
+
+```java
+@DynamicPropertySource
+static void poolSize(DynamicPropertyRegistry registry) {
+    registry.add("spring.datasource.hikari.maximum-pool-size", () -> "32");
+}
+```
+
+### 8.4 주의
+
+- 동시성 테스트는 느리고 CI 를 불안정하게 만든다. **경합이 정답을 바꾸는 지점에만** 쓴다.
+- 타임아웃 초과로 실패하면 데드락이나 DB lock-wait 을 의심한다. 타임아웃을 늘려 덮지 않는다.
+- `Thread.sleep()` 으로 순서를 맞추지 않는다. 래치는 `ConcurrentRunner` 가 이미 처리한다.
+
+---
+
+## 9. Fixture 관리
 
 도메인 객체 생성이 복잡하면 **Object Mother** 패턴으로 분리한다.
 
@@ -287,7 +371,7 @@ Review deleted = ReviewFixtures.aReview().status(ReviewStatus.DELETED).build();
 
 ---
 
-## 9. 커버리지 기준
+## 10. 커버리지 기준
 
 - domain: 분기 커버리지 **95% 이상**
 - application: 라인 커버리지 **90% 이상**
@@ -300,7 +384,7 @@ Review deleted = ReviewFixtures.aReview().status(ReviewStatus.DELETED).build();
 
 ---
 
-## 10. 안티 패턴
+## 11. 안티 패턴
 
 | 안티 패턴 | 올바른 방법 |
 |---|---|
@@ -316,10 +400,12 @@ Review deleted = ReviewFixtures.aReview().status(ReviewStatus.DELETED).build();
 | `@DataJpaTest` 에서 flush/clear 누락 | 조회 전 `flush()` + `clear()` |
 | Controller 테스트를 `@SpringBootTest` 로 | `@WebMvcTest(대상Controller)` |
 | Redis 폴백 경로 미검증 | 연결 예외 스텁으로 폴백 확인 |
+| 동시성 테스트에서 executor 직접 구성 | `ConcurrentRunner` 사용 (8절) |
+| 동시성 결과를 `isGreaterThan` 으로 단언 | 결정적인 사후 상태로 단언 (8.2절) |
 
 ---
 
-## 11. 실행 명령
+## 12. 실행 명령
 
 ```bash
 ./gradlew test                            # 전체
