@@ -42,7 +42,7 @@ PR 은 **리뷰를 위해 최적화**되어야 한다. 작성자가 리뷰어에
 ```
 
 - `type`: **필수**
-- `scope`: 권장 — 도메인 패키지명 (`review`, `place`, `member`, `common`)
+- `scope`: 권장 — 기능/도메인 이름 (`pledge`, `project`, `reward`, `common`)
 - `subject`: **필수** — 한 줄, 50자 이내, 마침표 없음, 한국어
 - `body`: 권장 — **왜** 이 변경이 필요한지
 - `footer`: 선택 — `Closes #142`, `BREAKING CHANGE:`
@@ -159,26 +159,27 @@ Closes #<이슈번호>
 
 <!-- 파일 나열이 아니라 개념 수준으로 -->
 
-- domain: `Review` Aggregate, `Rating` VO 추가
-- application: `WriteReviewService`, `WriteReviewCommand` 추가
-- infrastructure: `reviews` 테이블 추가, `ReviewMapper`/`ReviewRepositoryImpl`
-- presentation: `POST /v1/places/{placeId}/reviews` 추가
+- persistence: `PledgeJpaEntity` 추가, `RewardJpaEntity` 에 재고 차감 규칙 추가
+- persistence: `pledge` 테이블 + `CHECK (total_quantity >= sold_quantity)` 제약
+- application: `PledgeApplication.create()` 추가
+- presentation: `POST /v1/projects/{projectId}/pledges` 추가
 
 ## 🧪 테스트
 
-- [x] domain 단위 테스트: `ReviewTest` — 불변식 및 상태 전이 전 분기
-- [x] application 단위 테스트: `WriteReviewServiceTest` — 성공/중복/폐업 케이스
-- [x] infrastructure: `ReviewRepositoryImplTest` (`@DataJpaTest`)
-- [x] presentation: `ReviewControllerTest` (`@WebMvcTest`)
+- [x] Entity 규칙: `RewardJpaEntityTest` — 재고 초과·0 이하 수량 분기
+- [x] Application: `PledgeApplicationTest` — 성공/재고 부족/프로젝트 상태 케이스
+- [x] Repository: `RewardJpaRepositoryTest` (`@DataJpaTest`) — 원자적 UPDATE 갱신 행 수
+- [x] Controller: `PledgeControllerTest` (`@WebMvcTest`)
+- [x] 동시성: `PledgeConcurrencyTest` — 재고 100개에 200명 동시 요청
 
 ## 🖼 실행 결과
 
 ```http
-POST /v1/places/PLC-1024/reviews
-{ "rating": 5, "content": "좋았습니다" }
+POST /v1/projects/1/pledges
+{ "rewards": [ { "rewardId": 10, "quantity": 2 } ] }
 
 → 201 Created
-Location: /v1/reviews/REV-8821
+Location: /v1/pledges/8821
 ```
 
 ## ⚠️ 리뷰 포인트
@@ -193,7 +194,7 @@ Location: /v1/reviews/REV-8821
 ## ✅ 체크리스트
 
 - [ ] CLAUDE.md 의 원칙을 지켰는가?
-- [ ] 도메인 객체와 JpaEntity 가 분리되어 있는가?
+- [ ] 비즈니스 규칙이 JpaEntity 안에 있는가?
 - [ ] `@Transactional` 안에 Redis/HTTP 호출이 없는가?
 - [ ] API 규칙(kebab-case, camelCase, 페이지네이션, /v1)을 지켰는가?
 - [ ] `./gradlew build` 가 로컬에서 성공하는가?
@@ -216,18 +217,19 @@ PR 을 연 직후 **본인이 먼저** 기계적으로 확인한다.
 - [ ] 죽은 코드, 주석 처리된 코드가 없는가?
 
 ### 6.2 설계 (code-guidelines)
-- [ ] domain 에 JPA/Spring 애너테이션이 없는가?
-- [ ] JpaEntity 와 도메인 객체가 Mapper 를 통해 분리되어 있는가?
+- [ ] JpaEntity 에 `@Setter`/`@Data` 가 없고, 상태 변경이 의미 있는 메서드로 이뤄지는가?
+- [ ] 불변식을 Entity 메서드와 DB 제약 두 겹으로 막았는가?
+- [ ] JPA 연관관계 애너테이션 없이 외래 ID 컬럼 + 인덱스로 처리했는가?
 - [ ] Controller 가 Application 만 호출하는가?
-- [ ] Application Service 에 비즈니스 규칙이 새지 않았는가?
-- [ ] 다른 도메인 패키지의 infrastructure 를 import 하지 않았는가?
-- [ ] `Clock` 등 비결정적 의존성이 주입 가능한가?
+- [ ] Application 에 비즈니스 규칙이 새지 않았는가? (Entity 로 내릴 것은 없는가)
+- [ ] JpaEntity 를 Response 로 직접 반환하지 않는가?
+- [ ] 요구사항에 없는 인터페이스·추상화를 미리 만들지 않았는가?
 
 ### 6.3 테스트 (testing-junit)
 - [ ] 새 public 메서드에 테스트가 있는가?
 - [ ] 성공 케이스뿐 아니라 실패·경계 케이스도 있는가?
 - [ ] `@Disabled` 가 남아있지 않은가?
-- [ ] VO/Aggregate 를 Mock 하지 않았는가?
+- [ ] JpaEntity 를 Mock 하지 않고 `new` 로 생성했는가?
 
 ### 6.4 성능 / 보안
 - [ ] N+1 쿼리를 만들지 않는가?
@@ -249,9 +251,9 @@ PR 을 연 직후 **본인이 먼저** 기계적으로 확인한다.
 
 ### 분할 전략
 
-1. **계층별 분할 (선호)**: domain → application → infrastructure → presentation
-   각 PR 이 독립적으로 빌드 가능하고, 리뷰어가 안쪽부터 이해할 수 있다.
-2. **기능별 분할**: 리뷰 작성 → 평점 재계산 리스너 → 리뷰 목록 조회
+1. **계층별 분할 (선호)**: persistence → application → presentation
+   각 PR 이 독립적으로 빌드 가능하고, 리뷰어가 저장 구조부터 이해할 수 있다.
+2. **기능별 분할**: 후원 생성 → 재고 차감 동시성 처리 → 후원 목록 조회
 3. **리팩토링 선행**: `refactor: ...` 를 먼저 머지하고 `feat: ...` 를 올린다.
 
 ### 스택 PR
