@@ -1,12 +1,14 @@
 ---
 name: testing-junit
-description: k-place 에서 JUnit 5 기반 테스트를 작성할 때 사용한다. 계층별 테스트 전략(domain/application/infrastructure/presentation), Mock 사용 기준과 실제 객체 사용 기준, Given-When-Then 구조, 테스트 네이밍, Spring 슬라이스 테스트 선택, docker compose 인프라를 공유하고 @AfterEach 로 정리하는 테스트 환경(H2 를 쓰지 않는 이유), ConcurrentRunner 를 쓰는 동시성 테스트, Fixture 관리, 커버리지 기준을 포함한다. "테스트 작성", "단위 테스트", "통합 테스트", "동시성 테스트", "Mockito", "JUnit", "@SpringBootTest" 언급이 있거나 구현 직후 검증 단계에서 반드시 사용한다.
+description: k-place 에서 JUnit 5 기반 테스트를 작성할 때 사용한다. 계층별 테스트 전략(persistence/application/presentation), Mock 사용 기준과 실제 객체 사용 기준, Given-When-Then 구조, 테스트 네이밍, Spring 슬라이스 테스트 선택, docker compose 인프라를 공유하고 @AfterEach 로 정리하는 테스트 환경(H2 를 쓰지 않는 이유), ConcurrentRunner 를 쓰는 동시성 테스트, Fixture 관리, 커버리지 기준을 포함한다. "테스트 작성", "단위 테스트", "통합 테스트", "동시성 테스트", "Mockito", "JUnit", "@SpringBootTest" 언급이 있거나 구현 직후 검증 단계에서 반드시 사용한다.
 ---
 
 # Testing with JUnit 5
 
-DDD 계층 구조에서 **독립적이고 빠른** 테스트를 작성하기 위한 지침.
-구현이 끝난 직후, 커밋 전에 읽는다.
+**독립적이고 빠른** 테스트를 작성하기 위한 지침. 구현이 끝난 직후, 커밋 전에 읽는다.
+
+계층 구조는 `code-guidelines/SKILL.md` 2부를 따른다 — 규칙은 JpaEntity 안에 있고,
+Application 은 JpaRepository 를 직접 호출한다. 테스트도 그 구조를 그대로 따라간다.
 
 ---
 
@@ -15,30 +17,33 @@ DDD 계층 구조에서 **독립적이고 빠른** 테스트를 작성하기 위
 1. **계층별 독립 테스트** — 각 계층은 자기 책임만 검증한다. 다른 계층이 망가져도 내 테스트는 돈다.
 2. **Mock 은 경계에만** — 순수 객체는 실제로 쓴다.
 3. **테스트도 문서** — 이름만 봐도 사양이 보여야 한다.
-4. **빠른 피드백** — domain 테스트 전체가 1초 이내.
+4. **빠른 피드백** — Docker 없이 도는 테스트 전체가 1초 이내.
 5. **결정론적** — 시간·순서·외부 상태에 의존하지 않는다.
 
 ---
 
 ## 2. 계층별 전략
 
-| 계층 | 애너테이션 | Spring | DB/Redis | Mock 대상 |
+| 대상 | 애너테이션 | Spring | DB/Redis | Mock 대상 |
 |---|---|---|---|---|
-| domain | 없음 (순수 JUnit) | ❌ | ❌ | 없음 |
-| application | `@ExtendWith(MockitoExtension.class)` | ❌ | ❌ | Repository, 외부 연동 인터페이스, EventPublisher, Clock |
-| infrastructure (JPA) | `@DataJpaTest` | 슬라이스 | ✅ | 없음 |
-| infrastructure (Redis) | `@DataRedisTest` 또는 직접 구성 | 슬라이스 | ✅ | 없음 |
-| infrastructure (외부 HTTP) | `@RestClientTest` / MockWebServer | 슬라이스 | ❌ | HTTP 서버 |
-| presentation | `@WebMvcTest(XxxController.class)` | 슬라이스 | ❌ | Application Service |
+| JpaEntity 의 비즈니스 메서드 | 없음 (순수 JUnit) | ❌ | ❌ | 없음 |
+| Application | `@ExtendWith(MockitoExtension.class)` | ❌ | ❌ | JpaRepository, 외부 연동, Clock |
+| JpaRepository (쿼리·제약) | `@DataJpaTest` | 슬라이스 | ✅ | 없음 |
+| Redis 컴포넌트 | `@DataRedisTest` 또는 직접 구성 | 슬라이스 | ✅ | 없음 |
+| 외부 HTTP 연동 | `@RestClientTest` / MockWebServer | 슬라이스 | ❌ | HTTP 서버 |
+| Controller | `@WebMvcTest(XxxController.class)` | 슬라이스 | ❌ | Application |
 | 통합 (E2E) | `@SpringBootTest` | 전체 | ✅ | 최소화 |
 
-**반드시**: 분류와 애너테이션이 일치해야 한다. domain 테스트에 `@SpringBootTest` 가 보이면 즉시 수정.
+**JpaEntity 의 비즈니스 메서드는 `new` 로 만들어 순수 JUnit 으로 검증한다.**
+`@Entity` 가 붙어 있어도 그냥 자바 객체다. 규칙 테스트에 Spring 이나 DB 를 끌어들이지 않는다.
+
+**반드시**: 분류와 애너테이션이 일치해야 한다. 규칙 테스트에 `@SpringBootTest` 가 보이면 즉시 수정.
 
 DB/Redis 가 ✅ 인 테스트는 `IntegrationTest` 를 상속하고, **`docker compose up -d` 로 인프라가
 떠 있어야 한다**(7절). 그 외에는 Docker 없이 돈다.
 
 **테스트 패키지는 main 패키지 구조를 그대로 미러링한다.**
-`com.k_place.review.domain.ReviewTest` 처럼 대상과 같은 패키지에 둔다.
+`com.k_place.persistence.RewardJpaEntityTest` 처럼 대상과 같은 패키지에 둔다.
 
 ---
 
@@ -48,48 +53,42 @@ DB/Redis 가 ✅ 인 테스트는 `IntegrationTest` 를 상속하고, **`docker 
 - 외부 시스템 경계: **MySQL, Redis, 외부 HTTP API, 파일 시스템, 메일**
 - 비결정적 요소: **Clock, Random, UUID 생성기**
 - 느리거나 비싼 작업
-- **Repository 인터페이스, 외부 연동용 domain 인터페이스**
+- **JpaRepository** — Application 테스트에서는 Mock 으로 대체한다
 
 ### 3.2 Mock 을 **쓰면 안** 되는 것
-- **Value Object** (`Rating`, `PlaceId`, `Money`) → 실제 객체
-- **Entity / Aggregate Root** (`Review`, `Place`) → 실제 객체
-- 순수 Domain Service (외부 의존 없음) → 실제 객체
-- DTO, Command, Query → 실제 객체
+- **JpaEntity** (`RewardJpaEntity`, `PledgeJpaEntity`) → `new` 로 실제 객체
+- DTO, Command, Request/Response → 실제 객체
+- 외부 의존이 없는 계산 로직 → 실제 객체
 - 테스트 대상(SUT) → 당연히 실제
 
-### 3.3 판단 질문 5가지
+### 3.3 판단 질문 4가지
 
 ```
 Q1. 외부 리소스(DB, Redis, 네트워크, 시간)에 접근하는가?  → Yes: Mock
-Q2. Repository / 외부 연동 인터페이스인가?                 → Yes: Mock
+Q2. JpaRepository 또는 외부 연동 컴포넌트인가?             → Yes: Mock
 Q3. 실제로 쓰면 테스트가 1초 이상 걸리는가?                → Yes: Mock
-Q4. 순수 계산 로직만 있는가?                               → Yes: 실제 객체
-Q5. Value Object 또는 DTO 인가?                            → Yes: 실제 객체
+Q4. 데이터와 규칙만 가진 객체인가? (JpaEntity, DTO)        → Yes: 실제 객체
 ```
 
 ### 3.4 흔한 오용
 
 ```java
-// ❌ VO 를 Mock — 검증 로직이 사라져 테스트가 거짓 통과한다
-Rating rating = mock(Rating.class);
-when(rating.value()).thenReturn(5);
-
-// ✅
-Rating rating = new Rating(5);
-```
-
-```java
-// ❌ Aggregate 를 Mock — "호출되었는가" 만 보고 실제 규칙은 검증하지 않는다
-Review review = mock(Review.class);
-service.delete(command);
-verify(review).delete(any(), any());
+// ❌ JpaEntity 를 Mock — "호출되었는가" 만 보고 규칙 자체는 검증하지 않는다
+RewardJpaEntity reward = mock(RewardJpaEntity.class);
+pledgeApplication.create(command);
+verify(reward).decreaseSoldQuantity(anyInt());
 
 // ✅ 실제 객체로 상태 변화를 검증한다
-Review review = Review.write(...);
-given(reviewRepository.findById(reviewId)).willReturn(Optional.of(review));
-service.delete(command);
-assertThat(review.status()).isEqualTo(ReviewStatus.DELETED);
+RewardJpaEntity reward = new RewardJpaEntity(projectId, 10, 15_000L);
+given(rewardJpaRepository.findById(1L)).willReturn(Optional.of(reward));
+
+pledgeApplication.create(command);
+
+assertThat(reward.availableQuantity()).isEqualTo(8);
 ```
+
+`@Entity` 를 Mock 하고 싶어지면, 그 Entity 가 규칙을 갖고 있다는 뜻이다.
+규칙을 검증하려면 실제 객체여야 한다.
 
 ---
 
@@ -99,20 +98,17 @@ assertThat(review.status()).isEqualTo(ReviewStatus.DELETED);
 
 ```java
 @Test
-@DisplayName("작성자는 자신의 리뷰를 삭제할 수 있다")
-void delete_whenRequesterIsAuthor_shouldMarkAsDeleted() {
+@DisplayName("재고가 남아 있으면 요청 수량만큼 차감된다")
+void decreaseSoldQuantity_whenEnoughStock_shouldDecrease() {
     // given
-    MemberId author = MemberId.of("MEM-1");
-    Review review = Review.write(ReviewId.of("REV-1"), PlaceId.of("PLC-1"), author,
-            new Rating(5), "좋아요", Instant.parse("2026-08-19T10:00:00Z"));
-    Instant now = Instant.parse("2026-08-19T11:00:00Z");
+    RewardJpaEntity reward = new RewardJpaEntity(1L, 10, 15_000L);
 
     // when
-    review.delete(author, now);
+    reward.decreaseSoldQuantity(3);
 
     // then
-    assertThat(review.status()).isEqualTo(ReviewStatus.DELETED);
-    assertThat(review.updatedAt()).isEqualTo(now);
+    assertThat(reward.getSoldQuantity()).isEqualTo(3);
+    assertThat(reward.availableQuantity()).isEqualTo(7);
 }
 ```
 
@@ -125,91 +121,100 @@ void delete_whenRequesterIsAuthor_shouldMarkAsDeleted() {
 
 ```java
 @Test
-@DisplayName("작성자가 아닌 사용자는 리뷰를 삭제할 수 없다")
-void delete_whenRequesterIsNotAuthor_shouldThrow() { ... }
+@DisplayName("남은 재고보다 많은 수량은 차감할 수 없다")
+void decreaseSoldQuantity_whenExceedsStock_shouldThrow() { ... }
 ```
 
-`test1`, `삭제테스트`, `shouldWork` 같은 이름은 금지.
+`test1`, `재고테스트`, `shouldWork` 같은 이름은 금지.
 
 ---
 
 ## 6. 계층별 상세 규칙
 
-### 6.1 domain 테스트
-- **Spring 컨텍스트 금지** (`@SpringBootTest`, `@ExtendWith(SpringExtension.class)` 금지)
-- Mockito 를 거의 쓰지 않는다
+### 6.1 JpaEntity 규칙 테스트
+- **Spring 컨텍스트 금지** (`@SpringBootTest`, `@DataJpaTest` 금지). `new` 로 만들어 메서드만 호출한다
+- Mockito 를 쓰지 않는다
 - `@Nested` 로 케이스를 그룹화한다
 - **상태 전이의 모든 분기**와 불변식 위반 케이스를 검증한다
+- getter 만 있는 Entity 는 테스트하지 않는다. **검증할 규칙이 있을 때만** 테스트를 쓴다
 
 ```java
-class ReviewTest {
+class RewardJpaEntityTest {
 
     @Nested
-    @DisplayName("리뷰 작성")
-    class Write {
+    @DisplayName("재고 차감")
+    class DecreaseSoldQuantity {
+
         @Test
-        @DisplayName("내용이 1000자를 넘으면 작성할 수 없다")
-        void write_whenContentTooLong_shouldThrow() {
-            assertThatThrownBy(() -> Review.write(..., "a".repeat(1001), now))
-                    .isInstanceOf(IllegalArgumentException.class);
+        @DisplayName("남은 재고보다 많은 수량은 차감할 수 없다")
+        void decreaseSoldQuantity_whenExceedsStock_shouldThrow() {
+            RewardJpaEntity reward = new RewardJpaEntity(1L, 10, 15_000L);
+
+            assertThatThrownBy(() -> reward.decreaseSoldQuantity(11))
+                    .isInstanceOf(InvalidQuantityException.class);
+            assertThat(reward.getSoldQuantity()).isZero();   // 실패해도 상태가 변하지 않는다
         }
+
+        @Test
+        @DisplayName("0 이하 수량은 차감할 수 없다")
+        void decreaseSoldQuantity_whenNotPositive_shouldThrow() { ... }
     }
 }
 ```
 
-### 6.2 application 테스트
+### 6.2 Application 테스트
 - `@ExtendWith(MockitoExtension.class)`
-- **Repository, 외부 연동 인터페이스, EventPublisher 만 Mock.** 도메인 객체는 실제로 생성한다
-- `Clock.fixed(Instant.parse("..."), ZoneOffset.UTC)` 로 시간을 고정한다
+- **JpaRepository 와 외부 연동만 Mock.** JpaEntity 는 `new` 로 실제 생성한다
+- 시간이 규칙에 관여하면 `Clock.fixed(Instant.parse("..."), ZoneOffset.UTC)` 로 고정한다
 - 성공 경로 + **모든 예외 경로**를 검증한다
 - Mock 검증은 호출 여부뿐 아니라 **인자와 횟수**까지 확인한다
 
 ```java
 @ExtendWith(MockitoExtension.class)
-class WriteReviewServiceTest {
+class PledgeApplicationTest {
 
-    @Mock ReviewRepository reviewRepository;
-    @Mock PlaceReader placeReader;
-    @Mock ApplicationEventPublisher eventPublisher;
+    @Mock ProjectJpaRepository projectJpaRepository;
+    @Mock RewardJpaRepository rewardJpaRepository;
+    @Mock PledgeJpaRepository pledgeJpaRepository;
 
-    Clock clock = Clock.fixed(Instant.parse("2026-08-19T10:00:00Z"), ZoneOffset.UTC);
+    @InjectMocks PledgeApplication pledgeApplication;
 
     @Test
-    @DisplayName("같은 장소에 이미 리뷰를 쓴 회원은 다시 쓸 수 없다")
-    void write_whenDuplicated_shouldThrow() {
+    @DisplayName("재고가 부족하면 후원이 생성되지 않는다")
+    void create_whenRewardSoldOut_shouldThrow() {
         // given
-        given(placeReader.getById(any())).willReturn(openPlace());
-        given(reviewRepository.existsByPlaceIdAndAuthorId(any(), any())).willReturn(true);
+        given(projectJpaRepository.findById(1L)).willReturn(Optional.of(progressProject()));
+        given(rewardJpaRepository.decreaseQuantity(10L, 2)).willReturn(0);   // 갱신 0건 = 재고 부족
 
         // when & then
-        assertThatThrownBy(() -> service.write(command))
-                .isInstanceOf(DuplicateReviewException.class);
-        then(reviewRepository).should(never()).save(any());
+        assertThatThrownBy(() -> pledgeApplication.create(command))
+                .isInstanceOf(RewardSoldOutException.class);
+        then(pledgeJpaRepository).should(never()).save(any());
     }
 }
 ```
 
-### 6.3 infrastructure (JPA) 테스트
-- `@DataJpaTest` 사용
+### 6.3 JpaRepository 테스트 (`@DataJpaTest`)
+- 매핑이 아니라 **쿼리와 DB 제약**을 검증한다. 직접 만든 `@Query`·`@Modifying` 이 여기 대상이다
 - **`TestEntityManager.flush()` + `clear()` 후 조회한다.** 생략하면 1차 캐시가 응답해
   실제 매핑 오류(컬럼 누락, 타입 불일치)를 못 잡는다
-- unique/not-null 같은 **실제 DB 제약**을 검증한다
-- Mapper 는 `도메인 → Entity → 도메인` 왕복이 동등한지 확인한다
+- unique / not-null / **CHECK 제약**이 실제로 막는지 확인한다
+- 원자적 UPDATE 는 **갱신 행 수(0/1)** 를 단언한다. 조건에 걸려 0 이 나오는 경우가 핵심이다
 
-### 6.4 infrastructure (Redis) 테스트
+### 6.4 Redis 컴포넌트 테스트
 - 캐시 히트/미스뿐 아니라 **Redis 장애 시 폴백 경로**를 반드시 테스트한다
   (연결 예외를 던지도록 스텁하고, 예외가 밖으로 새지 않는지 확인)
 - TTL 만료는 `Thread.sleep()` 대신 TTL 값 자체를 검증하거나 짧은 TTL 로 확인한다
 
-### 6.5 presentation 테스트
+### 6.5 Controller 테스트
 - `@WebMvcTest(XxxController.class)` 로 **대상 Controller 만** 올린다
-- Application Service 는 `@MockitoBean` 으로 대체한다
+- Application 은 `@MockitoBean` 으로 대체한다
 - **HTTP 상태, JSON 구조, 검증 실패(400), 예외 매핑(404/409)** 를 모두 검증한다
 - 응답 JSON 의 속성명이 camelCase 인지 여기서 확인한다 (`api-conventions` 규칙)
 
 ### 6.6 통합 테스트
 - `@SpringBootTest` 는 **10개 이하**로 제한한다
-- 크리티컬 플로우만 (예: 리뷰 작성 → 장소 평점 갱신)
+- 크리티컬 플로우만 (예: 후원 생성 → 리워드 재고 차감)
 - 외부 HTTP 는 MockWebServer 로 대체한다. DB/Redis 는 실제 인프라를 쓴다(7절)
 
 ---
@@ -227,7 +232,7 @@ docker compose up -d      # 한 번만. 그 뒤로는 계속 재사용
 Spring 컨텍스트가 필요한 테스트는 `IntegrationTest` 를 상속한다.
 
 ```java
-class ReviewIntegrationTest extends IntegrationTest {
+class PledgeIntegrationTest extends IntegrationTest {
     @Test
     void ...
 }
@@ -292,16 +297,16 @@ H2 의 MySQL 호환 모드는 **호환일 뿐 동일하지 않다.** 아래는 H
 
 | 테스트 | Docker | 이유 |
 |---|---|---|
-| domain 단위 테스트 | ❌ | Spring 자체가 없다 |
-| application 단위 테스트 (Mockito) | ❌ | Repository 를 Mock |
+| JpaEntity 규칙 테스트 | ❌ | Spring 자체가 없다 |
+| Application 단위 테스트 (Mockito) | ❌ | JpaRepository 를 Mock |
 | `@WebMvcTest` | ❌ | datasource 를 올리지 않는 슬라이스 |
-| `IntegrationTest` 상속 | ✅ | 실제 DB 연결 |
+| `@DataJpaTest` / `IntegrationTest` 상속 | ✅ | 실제 DB 연결 |
 
 **DB 가 필요 없으면 `IntegrationTest` 를 상속하지 않는다.** 현재 18개 중 17개가 여기 해당하고
 1초 안에 끝난다. 빠른 피드백이 필요하면 이것만 골라 돌린다.
 
 ```bash
-./gradlew test --tests '*domain*' --tests '*ServiceTest'   # Docker 불필요
+./gradlew test --tests '*JpaEntityTest' --tests '*ApplicationTest'   # Docker 불필요
 ```
 
 ### 7.5 Redis 가 필요한 테스트
@@ -321,12 +326,12 @@ import static com.k_place.support.concurrent.ConcurrentRunner.run;
 
 @Test
 @DisplayName("재고 100개에 200명이 동시에 신청하면 정확히 100명만 성공한다")
-void write_underContention_shouldNotOverIssue() {
-    run(200, i -> issueService.issue(new IssueCommand(memberId(i), couponId)))
+void create_underContention_shouldNotOverSell() {
+    run(200, i -> pledgeApplication.create(commandFor(userId(i), rewardId)))
             .assertSuccessCount(100)
             .assertFailureCount(100);
 
-    assertThat(inventoryRepository.findById(couponId).orElseThrow().remaining()).isZero();
+    assertThat(rewardJpaRepository.findById(rewardId).orElseThrow().availableQuantity()).isZero();
 }
 ```
 
@@ -359,8 +364,8 @@ assertThat(result.successCount()).isGreaterThan(50);
 
 // ✅ 락이 올바르면 항상 같은 값
 result.assertSuccessCount(100);
-assertThat(inventory.remaining()).isZero();     // 음수면 초과 발급
-assertThat(couponRepository.count()).isEqualTo(100);
+assertThat(reward.availableQuantity()).isZero();      // 음수면 초과 판매
+assertThat(pledgeJpaRepository.count()).isEqualTo(100);
 ```
 
 무엇이 깨지는지도 함께 생각한다 — 락이 없으면 `successCount > 100`, 재고가 음수, unique 제약 위반 등.
@@ -372,7 +377,7 @@ assertThat(couponRepository.count()).isEqualTo(100);
 |---|---|---|
 | DB 락 (비관적/낙관적 락, unique 제약) | `IntegrationTest` 상속 | 실제 MySQL 필요 (7.3절) |
 | Redis 원자 연산 (`INCR`, Lua, 분산 락) | 위와 동일 | 실제 Redis 필요 |
-| 도메인 객체의 스레드 안전성 | domain 테스트 | Spring·Docker 없이 가능 |
+| 순수 객체의 스레드 안전성 | 단위 테스트 | Spring·Docker 없이 가능 |
 
 DB 락 정합성은 **반드시 실제 MySQL 위에서** 검증한다. H2 는 갭 락·격리 수준을 재현하지 못해
 락이 없어도 통과할 수 있다 (7.3절의 측정 결과 참조).
@@ -390,43 +395,48 @@ DB 락 정합성은 **반드시 실제 MySQL 위에서** 검증한다. H2 는 �
 - 동시성 테스트는 느리고 CI 를 불안정하게 만든다. **경합이 정답을 바꾸는 지점에만** 쓴다.
 - 타임아웃 초과로 실패하면 데드락이나 DB lock-wait 을 의심한다. 타임아웃을 늘려 덮지 않는다.
 - `Thread.sleep()` 으로 순서를 맞추지 않는다. 래치는 `ConcurrentRunner` 가 이미 처리한다.
+- **행을 둘 이상 잠그는 요청은 서로 반대 순서로 동시에 흘려본다.** 락 순서가 고정돼 있지 않으면
+  이 테스트가 데드락을 드러낸다 (`code-guidelines` 2.2절 락 순서).
 
 ---
 
 ## 9. Fixture 관리
 
-도메인 객체 생성이 복잡하면 **Object Mother** 패턴으로 분리한다.
+**생성자 호출이 한 줄이면 픽스처를 만들지 않는다.** 같은 준비 코드가 세 군데 넘게 반복될 때만
+static 팩토리로 뽑는다.
 
 ```java
-// src/test/java/com/k_place/review/fixture/ReviewFixtures.java
-public final class ReviewFixtures {
+// src/test/java/com/k_place/persistence/RewardFixtures.java
+public final class RewardFixtures {
 
-    public static Review.Builder aReview() {
-        return new Review.Builder()
-                .id(ReviewId.of("REV-1"))
-                .placeId(PlaceId.of("PLC-1"))
-                .authorId(MemberId.of("MEM-1"))
-                .rating(new Rating(5))
-                .content("기본 리뷰 내용");
+    /** 재고 10개, 15,000원짜리 기본 리워드. */
+    public static RewardJpaEntity aReward() {
+        return new RewardJpaEntity(1L, 10, 15_000L);
+    }
+
+    public static RewardJpaEntity soldOutReward() {
+        RewardJpaEntity reward = aReward();
+        reward.decreaseSoldQuantity(10);
+        return reward;
     }
 }
-
-// 사용
-Review deleted = ReviewFixtures.aReview().status(ReviewStatus.DELETED).build();
 ```
 
 - 기본값은 **항상 유효한 상태**로 둔다.
-- 테스트마다 **관심 있는 필드만** 오버라이드한다. 그 필드가 곧 그 테스트의 주제다.
+- 테스트마다 **관심 있는 것만** 바꾼다. 그것이 곧 그 테스트의 주제다.
+- 빌더가 필요할 만큼 필드가 많아지면, 픽스처가 아니라 **Entity 설계**를 먼저 의심한다.
 
 ---
 
 ## 10. 커버리지 기준
 
-- domain: 분기 커버리지 **95% 이상**
-- application: 라인 커버리지 **90% 이상**
-- infrastructure: 정상/예외 각 1개 이상
-- presentation: 성공 / 검증 실패 / 예외 매핑 각 1개 이상
+- JpaEntity 의 비즈니스 메서드: 분기 커버리지 **95% 이상**
+- Application: 라인 커버리지 **90% 이상**
+- JpaRepository / Redis: 정상·예외 각 1개 이상
+- Controller: 성공 / 검증 실패 / 예외 매핑 각 1개 이상
 - 전체: 라인 커버리지 **80% 이상**
+
+getter 만 있는 Entity, 필드 나열뿐인 DTO 는 커버리지 대상이 아니다.
 
 숫자보다 **의미 있는 분기를 놓치지 않는 것**이 중요하다.
 커버리지 도구(JaCoCo)는 도입 시 `build.gradle.kts` 에 플러그인을 추가한다.
@@ -437,16 +447,18 @@ Review deleted = ReviewFixtures.aReview().status(ReviewStatus.DELETED).build();
 
 | 안티 패턴 | 올바른 방법 |
 |---|---|
-| VO / Aggregate 를 Mock | 실제 객체 생성 |
-| 모든 테스트를 `@SpringBootTest` | 계층에 맞는 슬라이스 테스트 |
+| JpaEntity 를 Mock | `new` 로 실제 객체 생성 |
+| 모든 테스트를 `@SpringBootTest` | 대상에 맞는 슬라이스 테스트 (2절 표) |
+| JpaEntity 규칙 테스트에 `@DataJpaTest` | 순수 JUnit — DB 없이 `new` 로 검증 |
 | Happy Path 만 검증 | 실패·경계 케이스 필수 |
-| `LocalDateTime.now()` 직접 호출 | `Clock.fixed(...)` 주입 |
+| `LocalDateTime.now()` 직접 호출 (시간이 규칙일 때) | `Clock.fixed(...)` 주입 |
 | `Thread.sleep()` 으로 대기 | Awaitility 또는 동기 검증 |
 | `test1()`, `shouldWork()` | `<메서드>_<조건>_<기대결과>` + `@DisplayName` |
 | 과도한 `verify` (모든 호출 검증) | 그 테스트의 주제만 검증 |
 | `@Disabled` 방치 | 고치거나 삭제 |
 | 한 테스트에 여러 시나리오 | 시나리오당 테스트 1개 |
 | `@DataJpaTest` 에서 flush/clear 누락 | 조회 전 `flush()` + `clear()` |
+| 원자적 UPDATE 의 갱신 행 수 미검증 | 0 건(조건 미충족) 케이스를 단언 (6.3절) |
 | Controller 테스트를 `@SpringBootTest` 로 | `@WebMvcTest(대상Controller)` |
 | Redis 폴백 경로 미검증 | 연결 예외 스텁으로 폴백 확인 |
 | 동시성 테스트에서 executor 직접 구성 | `ConcurrentRunner` 사용 (8절) |
@@ -459,8 +471,8 @@ Review deleted = ReviewFixtures.aReview().status(ReviewStatus.DELETED).build();
 ```bash
 docker compose up -d                      # 전체 테스트 전 한 번 (7절)
 ./gradlew test                            # 전체
-./gradlew test --tests '*ReviewTest'      # 단일 클래스
-./gradlew test --tests '*domain*'         # 계층별 (Docker 불필요)
+./gradlew test --tests '*RewardJpaEntityTest'   # 단일 클래스
+./gradlew test --tests '*ApplicationTest'      # 대상별 (Docker 불필요)
 ./gradlew build                           # 컴파일 + 전체 테스트
 ```
 

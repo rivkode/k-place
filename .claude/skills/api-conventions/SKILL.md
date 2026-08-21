@@ -130,13 +130,14 @@ GET /v1/places?page=0&size=20&sort=createdAt,desc
 
 | 종류 | 표현 | 예 |
 |---|---|---|
-| 식별자 | 문자열 | `"placeId": "PLC-1024"` |
+| 식별자 | 숫자 (DB 의 auto increment id 를 그대로) | `"pledgeId": 1` |
 | 날짜시간 | ISO-8601 UTC | `"createdAt": "2026-08-19T10:00:00Z"` |
 | 날짜 | ISO-8601 | `"openDate": "2026-08-19"` |
 | 금액 | 정수(최소 단위) + 통화 | `{ "amount": 15000, "currency": "KRW" }` |
 | Enum | 대문자 스네이크 문자열 | `"status": "TEMPORARILY_CLOSED"` |
 
-- **ID 를 숫자로 노출하지 않는다.** 순차 ID 는 데이터 규모와 타 리소스를 추측 가능하게 한다.
+- **ID 는 DB 의 숫자 id 를 그대로 노출한다.** 순차 ID 가 데이터 규모를 짐작하게 한다는 단점은 알고 있으나,
+  클라이언트·PRD 와 타입을 맞추는 편익이 더 크다고 판단했다. 감춰야 할 리소스가 생기면 그때 그 리소스만 별도 식별자를 쓴다.
 - **금액에 `double` 을 쓰지 않는다.** 서버 내부는 `BigDecimal`, 응답은 정수 최소 단위.
 - 시간은 항상 UTC 로 응답하고, 표시용 변환은 클라이언트 책임.
 
@@ -176,7 +177,7 @@ GET /v1/places?page=0&size=20&sort=createdAt,desc
 // common/exception/ErrorCode.java 에 추가
 PLACE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 장소를 찾을 수 없습니다."),
 
-// place/domain/PlaceNotFoundException.java
+// domain/exception/ProjectNotFoundException.java
 public class PlaceNotFoundException extends BusinessException {
     public PlaceNotFoundException(PlaceId id) {
         super(ErrorCode.PLACE_NOT_FOUND, "place not found: " + id.value());
@@ -194,8 +195,8 @@ public class PlaceNotFoundException extends BusinessException {
 
 - 입력 검증 애너테이션(`@NotBlank`, `@Size`, `@Positive`)은 **Presentation 의 Request DTO 에만** 둔다.
 - Controller 파라미터에 `@Valid` 를 빠뜨리면 검증이 통째로 무시된다. 반드시 확인한다.
-- 형식 검증은 DTO 가, **비즈니스 규칙 검증은 도메인이** 한다. 둘을 섞지 않는다.
-  - DTO: "이름은 1~50자" / 도메인: "폐업한 장소에는 리뷰를 쓸 수 없다"
+- 형식 검증은 DTO 가, **비즈니스 규칙 검증은 JpaEntity/Application 이** 한다. 둘을 섞지 않는다.
+  - DTO: "수량은 1 이상" / Entity: "남은 재고보다 많이 살 수 없다"
 
 ---
 
@@ -218,10 +219,10 @@ API 를 추가·변경한 뒤 확인한다.
 - [ ] 응답이 `Page<T>` 직렬화가 아니라 `PageResponse<T>` 인가?
 - [ ] 상태 코드가 성공/실패 모두 의미에 맞는가? (에러를 200 으로 주지 않는가?)
 - [ ] 에러 응답이 공통 포맷이고 `ErrorCode` 를 사용하는가?
-- [ ] 날짜가 ISO-8601 UTC 인가? ID 가 문자열인가?
+- [ ] 날짜가 ISO-8601 UTC 인가?
 - [ ] Request DTO 에 검증 애너테이션과 `@Valid` 가 모두 있는가?
 - [ ] 하위 호환을 깨는 변경이라면 `/v2` 를 만들었는가?
-- [ ] 도메인 객체를 그대로 응답하지 않고 Response DTO 로 변환했는가?
+- [ ] JpaEntity 를 그대로 응답하지 않고 Response DTO 로 변환했는가?
 
 ---
 
@@ -235,13 +236,12 @@ API 를 추가·변경한 뒤 확인한다.
 | `Page<PlaceResponse>` 직렬화 | 자체 `PageResponse<T>` |
 | 200 + `{"success": false}` | 의미에 맞는 4xx |
 | 예외 메시지를 그대로 `message` 에 | `ErrorCode` 기반 사용자 메시지 |
-| 도메인 객체를 `@ResponseBody` 로 반환 | Response DTO 변환 |
-| 응답에 순차 숫자 ID 노출 | 문자열 식별자 |
+| JpaEntity 를 `@ResponseBody` 로 반환 | Response DTO 변환 |
 | 버전 없는 `/places` 신설 | `/v1/places` |
 
 ---
 
 ## 다음 단계
 
-- 계층 구조와 도메인 설계 → `.claude/skills/code-guidelines/SKILL.md`
+- 계층 구조와 Entity 설계 → `.claude/skills/code-guidelines/SKILL.md`
 - Controller 테스트 → `.claude/skills/testing-junit/SKILL.md`
